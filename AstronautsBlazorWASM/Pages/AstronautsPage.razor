@@ -1,0 +1,309 @@
+﻿@page "/astronauts"
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+@if (string.IsNullOrWhiteSpace(errorMessage) == false)
+{
+    <h3>Omluváme se, nastala neočekávaná chyba</h3>
+    <p>popis problému: @errorMessage</p>
+}
+else if (astronauts is null)
+{
+    <h3>Data se načítají ...</h3>
+}
+else if (isVisibleUpdateAstronaut)
+{
+    <h4>
+        Upravit astronauta
+    </h4>
+    <EditForm Model="@astronautToUpdate" OnValidSubmit="UpdateAstronaut">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <table>
+            <tr>
+                <td>
+                    Křestní jméno:
+                </td>
+                <td>
+                    <InputText @bind-Value="astronautToUpdate.FirstName" />
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    Příjmení:
+                </td>
+                <td>
+                    <InputText @bind-Value="astronautToUpdate.LastName" />
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    Datum narození:
+                </td>
+                <td>
+                    <InputDate @bind-Value="astronautToUpdate.Birthdate" />
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    Superschopnost:
+                </td>
+                <td>
+                    <InputSelect @bind-Value="astronautToUpdate.SuperpowerId">
+                        @foreach (var s in superpowers)
+                            {
+                            <option value="@s.Id">@s.Name</option>
+                            }
+                    </InputSelect>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                </td>
+                <td>
+                    <button type="submit" class="btn btn-info">Uložit</button>
+                    <button class="btn btn-secondary" @onclick="(() => StornoUpdateAstronaut())">Storno</button>
+                </td>
+            </tr>
+        </table>
+    </EditForm>
+}
+else
+{
+    @if (isVisibleAddAstronaut)
+    {
+        <h4>
+            Nový astronaut
+            <button @onclick="(() => isVisibleAddAstronaut = false)" class="btn btn-outline-info">
+                <small>schovat</small>
+            </button>
+        </h4>
+        <EditForm Model="@astronautToAdd" OnValidSubmit="AddAstronaut">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <table>
+                <tr>
+                    <td>
+                        Křestní jméno:
+                    </td>
+                    <td>
+                        <InputText @bind-Value="astronautToAdd.FirstName" />
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        Příjmení:
+                    </td>
+                    <td>
+                        <InputText @bind-Value="astronautToAdd.LastName" />
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        Datum narození:
+                    </td>
+                    <td>
+                        <InputDate @bind-Value="astronautToAdd.Birthdate" />
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        Superschopnost:
+                    </td>
+                    <td>
+                        <InputSelect @bind-Value="astronautToAdd.SuperpowerId">
+                            <option value="0">vyber ...</option>
+                            @foreach (var s in superpowers)
+                                    {
+                                <option value="@s.Id">@s.Name</option>
+                                    }
+                        </InputSelect>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                    </td>
+                    <td>
+                        <button type="submit" class="btn btn-primary">uložit</button>
+                        <button class="btn btn-secondary" @onclick="(() => astronautToAdd = new())">Reset</button>
+                    </td>
+                </tr>
+            </table>
+        </EditForm>
+    }
+    else
+    {
+        <button @onclick="(() => isVisibleAddAstronaut = true)" class="btn btn-outline-info">
+            vložit nového astronauta
+        </button>
+    }
+
+    <hr />
+
+    <h4>Seznam Astronautů</h4>
+    <table class="table table-striped">
+        <thead class="thead-dark">
+            <tr>
+                <th>Jméno</th>
+                <th>Příjmení</th>
+                <th>Datum narození</th>
+                <th>Superschopnost</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in astronauts)
+            {
+                <tr>
+                    <td>
+                        @item.FirstName
+                    </td>
+                    <td>
+                        @item.LastName
+                    </td>
+                    <td>
+                        @item.Birthdate.ToShortDateString()
+                    </td>
+                    <td>
+                        @item.Superpower.Name
+                    </td>
+                    <td>
+                        <button class="btn btn-outline-info" @onclick="(() => ShowUpdateAstronaut(item))">Upravit</button>
+                        <button class="btn btn-outline-danger" @onclick="(() => DeleteAstronaut(item))">Smazat</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<Astronaut> astronauts;
+    private List<Superpower> superpowers;
+    private Astronaut astronautToAdd = new();
+    private string errorMessage;
+    private bool isVisibleAddAstronaut = false;
+    private Astronaut astronautToUpdate;
+    private int astronautToUpdateSuperpowerId = 0;
+    private bool isVisibleUpdateAstronaut = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        astronauts = await GetAstronauts();
+        superpowers = await GetSuperpowers();
+    }
+
+    private async Task DeleteAstronaut(Astronaut astronaut)
+    {
+        string confirmDeleteText = $"Opravdu chcete vymazat astronauta: {astronaut.FirstName} {astronaut.LastName} narozeného {astronaut.Birthdate.ToShortDateString()}?";
+        bool confirmDeleteAstronaut = await JSRuntime.InvokeAsync<bool>("confirm", confirmDeleteText);
+
+        if (confirmDeleteAstronaut)
+        {
+            HttpResponseMessage response = await Http.DeleteAsync($"api/astronaut/{astronaut.Id}");
+            if (response.IsSuccessStatusCode)
+            {
+                astronauts.Remove(astronaut);
+            }
+        }
+        else
+        {
+            return;
+        }
+    }
+
+    private async Task<List<Astronaut>> GetAstronauts()
+    {
+        HttpResponseMessage response = await Http.GetAsync("api/astronaut");
+
+        if (response.IsSuccessStatusCode)
+        {
+            return await response.Content.ReadFromJsonAsync<List<Astronaut>>();
+        }
+        else
+        {
+            errorMessage = response.ReasonPhrase;
+            return new List<Astronaut>();
+        }
+    }
+
+    private async Task<List<Superpower>> GetSuperpowers()
+    {
+        HttpResponseMessage response = await Http.GetAsync("api/superpower");
+
+        if (response.IsSuccessStatusCode)
+        {
+            return await response.Content.ReadFromJsonAsync<List<Superpower>>();
+        }
+        else
+        {
+            errorMessage = response.ReasonPhrase;
+            return new List<Superpower>();
+        }
+    }
+
+    private async Task AddAstronaut()
+    {
+        //astronautToAdd.Superpower = superpowers.First(x => x.Id == astronautToAdd.SuperpowerId);
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/astronaut", astronautToAdd);
+            var addedAstronaut = await response.Content.ReadFromJsonAsync<Astronaut>();
+            addedAstronaut.Superpower = superpowers.First(x => x.Id == astronautToAdd.SuperpowerId);
+            astronauts.Add(addedAstronaut);
+            astronautToAdd = new();
+            isVisibleAddAstronaut = false;
+        }
+        catch (Exception ex)
+        {
+
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task UpdateAstronaut()
+    {
+        astronautToUpdate.Superpower = superpowers.First(x => x.Id == astronautToUpdate.SuperpowerId);
+        HttpResponseMessage response = await Http.PutAsJsonAsync($"api/astronaut/{astronautToUpdate.Id}", astronautToUpdate);
+
+        if (response.IsSuccessStatusCode)
+        {
+            var astronaut = astronauts.First(x => x.Id == astronautToUpdate.Id);
+            astronaut.FirstName = astronautToUpdate.FirstName;
+            astronaut.LastName = astronautToUpdate.LastName;
+            astronaut.Birthdate = astronautToUpdate.Birthdate;
+            astronaut.SuperpowerId = astronautToUpdate.SuperpowerId;
+            astronaut.Superpower = astronautToUpdate.Superpower;
+
+            isVisibleUpdateAstronaut = false;
+            astronautToUpdate = new();
+        }
+    }
+
+    private async Task<Astronaut> GetAstronaut(int id)
+    {
+        HttpResponseMessage response = await Http.GetAsync($"api/astronaut/{id}");
+
+        if (response.IsSuccessStatusCode)
+        {
+            return await response.Content.ReadFromJsonAsync<Astronaut>();
+        }
+        else
+        {
+            errorMessage = response.ReasonPhrase;
+            return new();
+        }
+    }
+
+    private async Task ShowUpdateAstronaut(Astronaut astronaut)
+    {
+        astronautToUpdate = await GetAstronaut(astronaut.Id);
+        isVisibleUpdateAstronaut = true;
+    }
+
+    private void StornoUpdateAstronaut()
+    {
+        astronautToUpdate = new();
+        isVisibleUpdateAstronaut = false;
+    }
+}
